@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from exceptions import BaseSecurityError, S3FileUploadError
+from exceptions import BaseSecurityError, S3FileUploadError, TokenExpiredError
 from schemas.profiles import ProfileResponseSchema, ProfileCreateSchema
 from config import get_jwt_auth_manager, get_settings, BaseAppSettings, get_accounts_email_notificator, \
     get_s3_storage_client
@@ -48,6 +48,8 @@ async def create_profile(
     try:
         decoded_token = jwt_manager.decode_access_token(token)
         token_user_id = decoded_token.get("user_id")
+    except TokenExpiredError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired.")
     except BaseSecurityError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
