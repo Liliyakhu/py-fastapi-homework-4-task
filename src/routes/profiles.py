@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, Header, status, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,13 +22,13 @@ def verify_authorization(authorization: str = Header(None)) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header is missing"
         )
-    parts = authorization.split(" ")
-    if len(parts) != 2 or parts[0] != "Bearer":
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format. Expected 'Bearer <token>'"
         )
-    return parts[1]
+    return token
 
 
 @router.post(
@@ -67,6 +69,12 @@ async def create_profile(
     result_token_user = await db.execute(stmt_token_user)
     token_user = result_token_user.scalars().first()
 
+    if not token_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or not active."
+        )
+
     if token_user_id != user_id and not token_user.has_group(UserGroupEnum.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -79,7 +87,8 @@ async def create_profile(
             detail="User already has a profile.",
         )
 
-    avatar_key = f"avatars/{user_id}_avatar.jpg"
+    extension = os.path.splitext(profile_data.avatar.filename)[1].lower() or ".jpg"
+    avatar_key = f"avatars/{user_id}_avatar{extension}"
     avatar_content = await profile_data.avatar.read()
     try:
         await s3_client.upload_file(avatar_key, avatar_content)
